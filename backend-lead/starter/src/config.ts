@@ -2,6 +2,12 @@ import 'dotenv/config';
 
 const env = process.env.NODE_ENV ?? 'development';
 
+/**
+ * Process configuration loaded from the environment after dotenv initialization.
+ *
+ * @remarks Only NODE_ENV equal to `test` selects DATABASE_URL_TEST; all other
+ * environments use DATABASE_URL. Missing values use the local development defaults.
+ */
 export const config = {
   env,
   port: Number(process.env.PORT ?? 3000),

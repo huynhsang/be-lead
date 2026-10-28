@@ -1,7 +1,14 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import * as memberService from '../services/memberService';
+import { idSchema } from './schemas';
 
+/**
+ * Member routes mounted at `/members`.
+ *
+ * @remarks POST `/` creates a member and zero-balance wallet (201).
+ * GET `/:memberId/wallet` returns balance and turnover counters, or 404 if absent.
+ */
 export const membersRouter = Router();
 
 const createMemberBody = z.object({
@@ -23,12 +30,16 @@ membersRouter.post('/', async (req, res, next) => {
 
 membersRouter.get('/:memberId/wallet', async (req, res, next) => {
   try {
-    const wallet = await memberService.getWalletByMemberId(req.params.memberId);
+    const memberId = idSchema.parse(req.params.memberId);
+    const wallet = await memberService.getWalletByMemberId(memberId);
     if (!wallet) {
       res.status(404).json({ error: 'wallet not found' });
       return;
     }
-    res.json({ id: wallet.id, memberId: wallet.memberId, balance: wallet.balance });
+    res.json({
+      id: wallet.id, memberId: wallet.memberId, balance: wallet.balance,
+      requiredTurnover: wallet.requiredTurnover, accruedTurnover: wallet.accruedTurnover,
+    });
   } catch (err) {
     next(err);
   }

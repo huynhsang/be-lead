@@ -2,6 +2,7 @@ import { createApp } from './app';
 import { config } from './config';
 import { sequelize } from './db/sequelize';
 
+/** Authenticates the database before opening the HTTP listener; startup failures exit below. */
 async function main() {
   await sequelize.authenticate();
   const app = createApp();
