@@ -67,6 +67,115 @@ callback amount/state conflicts 409, and insufficient balance, outstanding
 turnover or numeric capacity errors 422. A turnover error includes
 `outstandingTurnover` as a decimal string.
 
+## curl examples
+
+Start the API with `npm run dev` after completing setup, then run these examples
+in order in another terminal. They use Bash and `curl`; no extra tools are needed.
+Amounts must be JSON strings, not numbers.
+
+### 1. Check health
+
+```bash
+BASE_URL=http://localhost:3000
+
+curl -i "$BASE_URL/health"
+```
+
+Returns 200 with `{"status":"ok"}` when the database is reachable.
+
+### 2. Create a member and wallet
+
+```bash
+curl -i -X POST "$BASE_URL/members" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice01"}'
+```
+
+Returns 201 with `member` and `wallet` objects. Choose a new, unique username
+(3-64 characters) if you repeat this flow. Copy `member.id` and `wallet.id` from
+the response into these variables:
+
+```bash
+MEMBER_ID='replace-with-member-id'
+WALLET_ID='replace-with-wallet-id'
+```
+
+### 3. Get the member's wallet
+
+```bash
+curl -i "$BASE_URL/members/$MEMBER_ID/wallet"
+```
+
+Returns 200 with the wallet's balance, `requiredTurnover` and `accruedTurnover`.
+A new wallet starts with all three values at zero.
+
+### 4. Create a deposit
+
+```bash
+curl -i -X POST "$BASE_URL/deposits" \
+  -H 'Content-Type: application/json' \
+  -d "{\"memberId\":\"$MEMBER_ID\",\"amount\":\"100.50\",\"turnoverMultiplier\":0}"
+```
+
+Returns 201 with a pending funding transaction. The wallet is not credited yet.
+This walkthrough uses `turnoverMultiplier: 0` so the later withdrawal can succeed
+without first wagering the entire deposit. Omit it to use the default of 1.
+Copy `pspRef` from the response:
+
+```bash
+PSP_REF='replace-with-deposit-psp-ref'
+```
+
+### 5. Complete the deposit through the mock PSP callback
+
+```bash
+curl -i -X POST "$BASE_URL/psp/callbacks" \
+  -H 'Content-Type: application/json' \
+  -d "{\"pspRef\":\"$PSP_REF\",\"status\":\"completed\",\"amount\":\"100.50\"}"
+```
+
+Returns 200 and credits the wallet with 100.50. Repeating this exact callback
+returns 200 without crediting again.
+
+To simulate a failed deposit instead, create a **separate pending deposit** in
+step 4, set `PSP_REF` to its reference, and send:
+
+```bash
+curl -i -X POST "$BASE_URL/psp/callbacks" \
+  -H 'Content-Type: application/json' \
+  -d "{\"pspRef\":\"$PSP_REF\",\"status\":\"failed\",\"amount\":\"100.50\"}"
+```
+
+A failed callback returns 200 without crediting the wallet. Do not send it for
+the already completed deposit: conflicting terminal states return 409.
+
+### 6. Record a wager
+
+```bash
+curl -i -X POST "$BASE_URL/wallets/$WALLET_ID/wagers" \
+  -H 'Content-Type: application/json' \
+  -d '{"amount":"10.00"}'
+```
+
+Returns 201 with the wager ID, wallet ID, new balance and accrued turnover.
+After the successful deposit above, the balance is 90.50 and accrued turnover is
+10.00. Each request records a new wager; this endpoint is not idempotent.
+
+### 7. Create a withdrawal
+
+```bash
+curl -i -X POST "$BASE_URL/withdrawals" \
+  -H 'Content-Type: application/json' \
+  -d "{\"memberId\":\"$MEMBER_ID\",\"amount\":\"50.00\"}"
+```
+
+Returns 201 with a pending withdrawal and debits the wallet immediately.
+Following the successful flow above, the remaining balance is 40.50. Repeat
+the GET request in step 3 to inspect it. Outstanding turnover or insufficient
+balance returns 422 instead.
+
+## Development notes
+
 `npm test` migrates and truncates the configured **test** database: use a dedicated
 database, never production. Tests use real PostgreSQL row locks and require the
 test role to see its own sessions in `pg_stat_activity` (the provided setup does).
